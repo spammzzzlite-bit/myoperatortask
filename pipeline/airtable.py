@@ -1,7 +1,8 @@
 """Thin, rate-limited Airtable REST client.
 
-- Reads AIRTABLE_TOKEN (required) and AIRTABLE_BASE_ID (defaults to the
-  exercise base) from .env or the environment.
+- Reads AIRTABLE_TOKEN and AIRTABLE_BASE_ID (defaults to the exercise base)
+  from .env or the environment. Without a token it sends no auth header, for
+  environments whose proxy injects an API credential.
 - Never logs the token.
 - Throttles to stay under Airtable's 5 req/s per-base limit.
 - On 429, waits out the 30 s lockout and retries.
@@ -42,11 +43,14 @@ class Airtable:
         load_env()
         self.token = token or os.environ.get("AIRTABLE_TOKEN")
         self.base_id = base_id or os.environ.get("AIRTABLE_BASE_ID") or DEFAULT_BASE_ID
-        if not self.token:
-            raise AirtableError("AIRTABLE_TOKEN not set: add it as an environment variable or in .env")
         self.session = requests.Session()
-        self.session.headers["Authorization"] = f"Bearer {self.token}"
         self.log = log
+        if self.token:
+            self.session.headers["Authorization"] = f"Bearer {self.token}"
+        else:
+            # A cloud environment's "API credential" is injected by the egress proxy,
+            # so the session never sees the key. Send no header and let the proxy add it.
+            log("  AIRTABLE_TOKEN not set; relying on an environment API credential for auth")
         self._last = 0.0
         self.request_count = 0
 
@@ -102,6 +106,9 @@ class Airtable:
                     # Offset expired mid-scan: restart this table from page 1.
                     self.log(f"  pagination offset expired on {table}; restarting table")
                     break
+                if r.status_code in (401, 403) and not records:
+                    raise AirtableError(f"{table}: HTTP {r.status_code}, not authorised. Set AIRTABLE_TOKEN "
+                                        "or add an API credential for api.airtable.com")
                 if r.status_code != 200:
                     raise AirtableError(f"{table}: HTTP {r.status_code} {r.text[:200]}")
                 body = r.json()

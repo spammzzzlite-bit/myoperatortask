@@ -28,7 +28,8 @@ def load_env(path=ROOT / ".env"):
 def request(method, url, token, body=None):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", f"Bearer {token}")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
     if data is not None:
         req.add_header("Content-Type", "application/json")
     ctx = ssl.create_default_context(cafile=os.environ.get("SSL_CERT_FILE") or None)
@@ -48,7 +49,7 @@ def main(table="Applications", n=3):
     token = os.environ.get("AIRTABLE_TOKEN")
     base = os.environ.get("AIRTABLE_BASE_ID") or "appYePRAI75PMbQNQ"  # exercise base; not a secret
     if not token:
-        sys.exit("AIRTABLE_TOKEN not set: add it as an environment variable or in .env")
+        print("AIRTABLE_TOKEN not set; relying on an environment API credential for auth")
     url = f"https://api.airtable.com/v0/{base}/{urllib.request.quote(table)}"
 
     # 1. Read: pull n records.
@@ -58,6 +59,8 @@ def main(table="Applications", n=3):
         sys.exit(f"Could not reach api.airtable.com (network, not auth): {e.reason}")
     recs = body.get("records", [])
     print(f"READ  GET {table}?maxRecords={n} -> HTTP {status}, {len(recs)} records")
+    if status in (401, 403):
+        sys.exit("Not authorised: set AIRTABLE_TOKEN or add an API credential for api.airtable.com")
     for r in recs:
         print(f"      record id: {r.get('id')}")
 
