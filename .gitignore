@@ -1,0 +1,14 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Local data cache (raw Airtable pulls)
+data/raw/
+cache/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
