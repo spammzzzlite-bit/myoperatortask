@@ -165,7 +165,7 @@ What the pack requires:
 - Access is read-only, and a 403 on write is expected.
 
 What this project does:
-- The key lives only in `.env` (`AIRTABLE_TOKEN`, file mode `600`). `.env` is listed in `.gitignore`. Only `.env.example` (placeholder values) is committed.
+- The key lives either in `.env` for local runs (`AIRTABLE_TOKEN`, file mode `600`), or, in this cloud environment, as a proxy-injected API credential that the session never sees (see §10). `.env` is listed in `.gitignore`. Only `.env.example` (placeholder values) is committed.
 - The key is **never printed** into notes, code, README, transcript summaries or any generated output. Scripts read it from the environment and log status codes, counts and record IDs only.
 - The raw data cache (`data/raw/`) is git-ignored too. It is a customer's production data, and it should be shared only as part of the submission if needed.
 - We never write to the base. The only write-shaped request we plan is a no-op probe (POST with an empty record list) to confirm the token is read-only. It cannot create anything.
@@ -173,30 +173,61 @@ What this project does:
 ## 10. Status
 
 - [x] Exercise pack read in full
-- [x] `.env` created (key loaded, not echoed), `.env` git-ignored, `.env.example` committed
-- [x] Connectivity check script written: `scripts/check_connection.py`
-- [ ] **Connectivity check blocked:** this cloud environment's network policy denies outbound access to `api.airtable.com` (proxy returned 403 on CONNECT). The failure is in the sandbox's egress policy, not in Airtable auth. We need `api.airtable.com` added to the environment's allowed domains (or a broader network access level), then re-run:
-  ```bash
-  python3 scripts/check_connection.py            # default table: Applications, 3 records
-  ```
-- [x] Ingestion pipeline built (`pipeline/`): schema discovery, paginated pull at ≤4 req/s, 429 lockout handling, expired-offset restart, raw JSON cache and manifest. Tested end-to-end against a local mock API (`tests/test_pipeline.py`).
-- [x] Profiler (`pipeline/profile.py`) and raw-row viewer (`pipeline/show_raw.py`) built. Both work offline from the cache.
-- [ ] **Real pull blocked** by the same network restriction on `api.airtable.com`. No real Acme data has been seen yet.
-- [ ] D1–D5 (not started, per instructions)
+- [x] Credential: supplied as this cloud environment's **API credential** for `api.airtable.com`, injected by the egress proxy. `AIRTABLE_TOKEN` is unset and no `.env` exists; the code sends no auth header of its own when the variable is unset. `.env` stays git-ignored for local runs.
+- [x] Connectivity check (`python3 scripts/check_connection.py`, 2026-09-23): read `GET Applications?maxRecords=3` → **HTTP 200**, 3 records; no-op write probe (POST empty record list) → **HTTP 403** `INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND`. Access is live and read-only, as the pack says.
+- [x] Ingestion pipeline (`pipeline/`): schema discovery, paginated pull at ≤4 req/s, 429 lockout handling, expired-offset restart, raw JSON cache and manifest. Tested against a local mock API (`tests/test_pipeline.py`).
+- [x] **Real pull done** (`python3 -m pipeline.ingest`, fetched 2026-09-23T07:57:43Z): 15 requests in 4.1 s, no 429s.
 
-## 11. Data needs per deliverable (PROVISIONAL, written before seeing the schema)
+  | Table | Records | Pages |
+  |---|---:|---:|
+  | Departments | 8 | 1 |
+  | People | 14 | 1 |
+  | Job Openings | 24 | 1 |
+  | Candidates | 300 | 3 |
+  | Applications | 350 | 4 |
+  | Interviews | 160 | 2 |
+  | Offers | 36 | 1 |
+  | Findings | 0 | 1 |
 
-These are the concepts each deliverable depends on. Field names are guesses until the profile runs against the real base. Each one needs mapping to a real field, or recording as missing.
+  Counts and sha256 per table are in `data/raw/_manifest.json`.
+- [x] **Schema metadata API returned 403** (token lacks `schema.bases:read`). The schema is inferred from records, which means: fields that are empty on every record are invisible (Airtable omits empty fields); field types (single select vs text, formula vs lookup) and primary fields are unknown; declared-but-unused select options cannot be checked.
+- [x] Profile (`python3 -m pipeline.profile` → `data/profile/profile.md`) and raw-row sample (`python3 -m pipeline.show_raw`) reviewed.
+- [ ] D4 data-quality audit (`pipeline/audit.py` → `outputs/data_quality.md`, `.csv`)
+- [ ] D1–D3, D5 (not started, per instructions)
 
-| Need | Used by | Likely location | Joins |
+## 11. Data needs per deliverable (mapped to the real schema)
+
+Mapped against the pulled data (schema inferred from records; see §10). Supersedes the provisional guesses written before the pull. This section says **where** each input lives, not what it shows.
+
+### Structural facts that shape every deliverable
+
+- **Source is per candidate, not per application.** `Candidates.Source` (Job Board, Agency, LinkedIn, Career Site, Referral, Campus). 50 candidates have 2 applications and both inherit one source.
+- **Two competing referral signals besides `Source`:** `Applications.Referred By` → People (27 applications) and free text in `Candidates.Notes` (e.g. "Referred internally", "Sourced from a conference list").
+- **"Hire" has two candidate definitions:** `Applications.Stage = "Hired"` or `Offers.Status = "Accepted"`. No start/joined date exists, so an accepted-then-reneged offer is undetectable.
+- **People is Acme's staff** (Role: Recruiter / Interviewer / Hiring Manager), not hires. There is no People ↔ Candidates link; the earlier guess was wrong.
+- **Offer date is stored twice:** `Offers.Offered On` and `Applications.Offered On` (profile: 92% value match).
+- **`createdTime` is a bulk-load timestamp** (all records 2026-08-27), so only business date fields carry event time.
+- `Findings` has 0 records and no visible fields.
+
+### Field mapping
+
+| Need | Used by | Real field(s) | Joins |
 |---|---|---|---|
-| Channel / source of each candidate or application | D1-C1, D4 | Candidates or Applications (`Source`?) | Applications → Candidates |
-| What counts as a "hire" (stage/status value, hire date, or accepted offer) | D1-C1, D3 | Applications stage, Offers status, maybe People (employees) | Offers → Applications → Candidates; People ↔ Candidates? |
-| Offer outcome (accepted / declined / pending / rescinded / expired) | D1-C2, D3 | Offers status | Offers → Applications |
-| Offer dates (extended, responded, start) | D3 time window, D4 | Offers | — |
-| Job opening and department (for segmenting and dedupe) | D2, D4 | Job Openings → Departments | Applications → Job Openings → Departments |
-| Interview activity (for funnel and effort sizing) | D2, D4 | Interviews | Interviews → Applications |
-| Record IDs and link integrity (orphans, many-to-many) | D4 | all link fields | all |
-| `Findings` table contents (read-only: see what is already recorded) | D4 context | Findings | ? |
+| Channel | D1-C1 | `Candidates.Source`; also `Applications.Referred By`, `Candidates.Notes` | Applications.`Candidate` → Candidates |
+| Channel volume ("biggest channel") | D1-C1 | count of Candidates or Applications by `Source` (volume vs hires is a definitional choice) | as above |
+| Hire | D1-C1, D3 | `Applications.Stage = "Hired"`; `Offers.Status = "Accepted"`; `Job Openings.Status = "Filled"` + `Headcount` | Offers.`Application` → Applications.`Candidate` → Candidates |
+| Offer outcome | D1-C2, D3 | `Offers.Status` (Accepted / Declined / Pending; no Rescinded/Expired), `Offers.Decline Reason` (Counter Offer, Location, Compensation) | Offers → Applications |
+| Offer time window | D3 | `Offers.Offered On`, `Offers.Decision On`; duplicate `Applications.Offered On` | — |
+| Offer terms | D3, D4 | `Offers.Base CTC`, `Joining Bonus`, `Proposed Start Date`; `Job Openings.Salary Band Min/Max` | Offers → Applications.`Opening` → Job Openings |
+| Offers per application / candidate | D3 | `Applications.Offers` (max 1 per application); a candidate can have 2 via 2 applications | Offers → Applications → Candidates |
+| Pipeline state (cross-check) | D1, D3, D4 | `Applications.Stage` (Applied, Screening, Interview, Offer, Hired, Rejected, Withdrawn), `Status` (Active/Closed), `Closed On`, `Rejection Reason` | — |
+| Stage dates | D2, D4 | `Applications.Applied On`, `Screened On`, `First Interview On`, `Final Interview On`, `Offered On`, `Closed On` | — |
+| Segments | D2 | Job Openings `Department`, `Level`, `Location`, `Employment Type`, `Status`, `Headcount` | Applications.`Opening` → Job Openings.`Department` → Departments |
+| Interview activity | D2, D4 | Interviews `Round`, `Outcome`, `Recommendation`, `Score`, `Scheduled On`, `Completed On`, `Interviewer` | Interviews.`Application` ↔ Applications.`Interviews` |
+| Record IDs | D4 | `Application ID`, `Candidate ID`, `Offer ID`, `Interview ID`, `Req ID`, `Departments.Code` | — |
+| Candidate identity (dedupe) | D1, D4 | `Candidates.Full Name`, `Phone`, `Email` (profile: 294 / 294 / 300 distinct of 300) | — |
+| Link integrity | D4 | every link field, both directions | all |
 
-The profile already checks the D4-relevant shapes: missing rates, value variants (e.g. casing or spelling differences in category values), mixed value types, formula errors, unresolved links, links with more than one target, declared-but-unused select options, and date ranges.
+### D4 checks this implies
+
+Uniqueness of every ID field and of candidate identity; link integrity both ways; cross-field consistency (Stage vs Status vs Closed On vs Rejection Reason; Hired vs Accepted; Offer Status vs Decision On; the two Offered On copies; interview dates vs Interviews; Filled/Headcount vs hires; Base CTC vs band; Source vs Referred By vs Notes); date order; category hygiene; missing values in D1/D3 fields. Implemented in `pipeline/audit.py`.
