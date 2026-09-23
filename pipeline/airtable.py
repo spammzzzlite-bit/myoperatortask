@@ -1,6 +1,7 @@
 """Thin, rate-limited Airtable REST client.
 
-- Reads AIRTABLE_TOKEN / AIRTABLE_BASE_ID from .env or the environment.
+- Reads AIRTABLE_TOKEN (required) and AIRTABLE_BASE_ID (defaults to the
+  exercise base) from .env or the environment.
 - Never logs the token.
 - Throttles to stay under Airtable's 5 req/s per-base limit.
 - On 429, waits out the 30 s lockout and retries.
@@ -15,6 +16,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 
+DEFAULT_BASE_ID = "appYePRAI75PMbQNQ"  # "TalentFlow - Acme Corp", from the brief; not a secret
 API_URL = os.environ.get("AIRTABLE_API_URL", "https://api.airtable.com")  # overridable for tests
 MIN_INTERVAL_S = 0.25   # 4 req/s: headroom under the 5 req/s limit
 LOCKOUT_S = 30          # Airtable's 429 lockout
@@ -39,9 +41,9 @@ class Airtable:
     def __init__(self, token=None, base_id=None, log=print):
         load_env()
         self.token = token or os.environ.get("AIRTABLE_TOKEN")
-        self.base_id = base_id or os.environ.get("AIRTABLE_BASE_ID")
-        if not self.token or not self.base_id:
-            raise AirtableError("AIRTABLE_TOKEN / AIRTABLE_BASE_ID not set (see .env.example)")
+        self.base_id = base_id or os.environ.get("AIRTABLE_BASE_ID") or DEFAULT_BASE_ID
+        if not self.token:
+            raise AirtableError("AIRTABLE_TOKEN not set: add it as an environment variable or in .env")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.token}"
         self.log = log

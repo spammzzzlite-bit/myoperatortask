@@ -1,6 +1,6 @@
 """Raw Airtable connectivity check.
 
-Reads AIRTABLE_TOKEN / AIRTABLE_BASE_ID from .env (or the environment),
+Reads AIRTABLE_TOKEN (and optional AIRTABLE_BASE_ID) from .env or the environment,
 fetches a handful of records from one table, and confirms the token is
 read-only. Prints status codes, record counts and record IDs only — never
 the token and never record contents.
@@ -46,9 +46,9 @@ def request(method, url, token, body=None):
 def main(table="Applications", n=3):
     load_env()
     token = os.environ.get("AIRTABLE_TOKEN")
-    base = os.environ.get("AIRTABLE_BASE_ID")
-    if not token or not base:
-        sys.exit("AIRTABLE_TOKEN / AIRTABLE_BASE_ID not set")
+    base = os.environ.get("AIRTABLE_BASE_ID") or "appYePRAI75PMbQNQ"  # exercise base; not a secret
+    if not token:
+        sys.exit("AIRTABLE_TOKEN not set: add it as an environment variable or in .env")
     url = f"https://api.airtable.com/v0/{base}/{urllib.request.quote(table)}"
 
     # 1. Read: pull n records.

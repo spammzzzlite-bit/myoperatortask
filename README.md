@@ -9,6 +9,8 @@ pip install -r requirements.txt
 cp .env.example .env   # then put the Airtable token in AIRTABLE_TOKEN
 ```
 
+Or set `AIRTABLE_TOKEN` as an environment variable (for a cloud session, in the environment's settings). It is the only required value; `AIRTABLE_BASE_ID` defaults to the exercise base `appYePRAI75PMbQNQ`.
+
 The token is read from `.env` / the environment only. It is never printed, logged or written to disk elsewhere.
 
 ## Pipeline
