@@ -192,7 +192,7 @@ What this project does:
   Counts and sha256 per table are in `data/raw/_manifest.json`.
 - [x] **Schema metadata API returned 403** (token lacks `schema.bases:read`). The schema is inferred from records, which means: fields that are empty on every record are invisible (Airtable omits empty fields); field types (single select vs text, formula vs lookup) and primary fields are unknown; declared-but-unused select options cannot be checked.
 - [x] Profile (`python3 -m pipeline.profile` → `data/profile/profile.md`) and raw-row sample (`python3 -m pipeline.show_raw`) reviewed.
-- [ ] D4 data-quality audit (`pipeline/audit.py` → `outputs/data_quality.md`, `.csv`)
+- [x] D4 data-quality audit (`python3 -m pipeline.audit` → `outputs/data_quality.md`, `.csv`): 196 checks across 7 categories, 57 with failures. Descriptive only; no verdicts yet.
 - [ ] D1–D3, D5 (not started, per instructions)
 
 ## 11. Data needs per deliverable (mapped to the real schema)
