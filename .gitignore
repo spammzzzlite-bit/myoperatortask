@@ -3,8 +3,8 @@
 .env.*
 !.env.example
 
-# Local data cache (raw Airtable pulls)
-data/raw/
+# Local data cache + profile (Acme production data, incl. candidate PII)
+data/
 cache/
 
 # Python

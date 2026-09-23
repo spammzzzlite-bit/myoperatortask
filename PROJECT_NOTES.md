@@ -179,5 +179,24 @@ What this project does:
   ```bash
   python3 scripts/check_connection.py            # default table: Applications, 3 records
   ```
-- [ ] Data pull + cache (not started. Waiting on connectivity and go-ahead)
+- [x] Ingestion pipeline built (`pipeline/`): schema discovery, paginated pull at ≤4 req/s, 429 lockout handling, expired-offset restart, raw JSON cache and manifest. Tested end-to-end against a local mock API (`tests/test_pipeline.py`).
+- [x] Profiler (`pipeline/profile.py`) and raw-row viewer (`pipeline/show_raw.py`) built. Both work offline from the cache.
+- [ ] **Real pull blocked** by the same network restriction on `api.airtable.com`. No real Acme data has been seen yet.
 - [ ] D1–D5 (not started, per instructions)
+
+## 11. Data needs per deliverable (PROVISIONAL, written before seeing the schema)
+
+These are the concepts each deliverable depends on. Field names are guesses until the profile runs against the real base. Each one needs mapping to a real field, or recording as missing.
+
+| Need | Used by | Likely location | Joins |
+|---|---|---|---|
+| Channel / source of each candidate or application | D1-C1, D4 | Candidates or Applications (`Source`?) | Applications → Candidates |
+| What counts as a "hire" (stage/status value, hire date, or accepted offer) | D1-C1, D3 | Applications stage, Offers status, maybe People (employees) | Offers → Applications → Candidates; People ↔ Candidates? |
+| Offer outcome (accepted / declined / pending / rescinded / expired) | D1-C2, D3 | Offers status | Offers → Applications |
+| Offer dates (extended, responded, start) | D3 time window, D4 | Offers | — |
+| Job opening and department (for segmenting and dedupe) | D2, D4 | Job Openings → Departments | Applications → Job Openings → Departments |
+| Interview activity (for funnel and effort sizing) | D2, D4 | Interviews | Interviews → Applications |
+| Record IDs and link integrity (orphans, many-to-many) | D4 | all link fields | all |
+| `Findings` table contents (read-only: see what is already recorded) | D4 context | Findings | ? |
+
+The profile already checks the D4-relevant shapes: missing rates, value variants (e.g. casing or spelling differences in category values), mixed value types, formula errors, unresolved links, links with more than one target, declared-but-unused select options, and date ranges.
